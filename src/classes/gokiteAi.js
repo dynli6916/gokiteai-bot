@@ -28,15 +28,22 @@ class gokiteAiAgent {
     this.tokenExpiresOn = null;
   }
 
-  generateRandomMessage() {
-    const messages = [
-      "Hey, how’s it going?",
-      "What's up?",
-      "How's your day?",
-      "Tell me something interesting!",
-      "Let's chat!",
-      "How do you feel today?",
-    ];
+  generateRandomMessage(agentId) {
+    const messagesByAgent = {
+      deployment_R89FtdnXa7jWWHyr97WQ9LKG: [
+        "What is Kite AI?",
+        "What is proof of AI?",
+      ],
+      deployment_fseGykIvCLs3m9Nrpe9Zguy9: [
+        "Price of bitcoin",
+        "Top movers today",
+      ],
+      deployment_xkerjnnbdtazr9e15x3y7fi8: [
+        "What do you think of this transaction? 0x252c02bded9a24426219248c9c1b065b752d3cf8bedf4902ed62245ab950895b",
+      ],
+    };
+
+    const messages = messagesByAgent[agentId] || ["Default message"];
     return messages[Math.floor(Math.random() * messages.length)];
   }
 
@@ -209,12 +216,16 @@ class gokiteAiAgent {
     }
   }
 
-  async chatStream(message, agent_id) {
-    const url =
-      "https://deployment-hbwpip3hco538fao1sk8asca.stag-vxzy.zettablock.com/main";
+  async chatStream(agent_id) {
+    const formattedAgentId = agent_id.replace(/_/g, "-");
+    const url = `https://${formattedAgentId}.stag-vxzy.zettablock.com/main`;
 
     try {
       logger.log(`{cyan-fg}Chatting with agent: ${agent_id}{/cyan-fg}`);
+      const startTime = Date.now();
+      let ttft = null;
+      let fullResponse = "";
+      const message = this.generateRandomMessage(agent_id);
 
       const response = await this.makeRequest("POST", url, {
         data: { message, stream: true },
@@ -226,49 +237,58 @@ class gokiteAiAgent {
         return;
       }
 
-      let fullResponse = "";
-
       response.data.on("data", (chunk) => {
         const text = chunk.toString().trim();
-        if (text && text !== "data: [DONE]") {
-          try {
-            const jsonData = JSON.parse(text.replace(/^data: /, ""));
-            const content = jsonData.choices?.[0]?.delta?.content;
-            if (content) {
-              fullResponse += content;
-            }
-          } catch (err) {
-            logger.log(
-              `{yellow-fg}Skipping invalid chunk: ${text}{/yellow-fg}`
-            );
-          }
+        if (!text || text === "data:" || text === "data: [DONE]") {
+          return;
         }
+
+        try {
+          const cleanText = text.replace(/^data:\s*/, "");
+          if (cleanText.startsWith("{") && cleanText.endsWith("}")) {
+            const jsonData = JSON.parse(cleanText);
+            if (jsonData.choices && jsonData.choices.length > 0) {
+              const delta = jsonData.choices[0].delta;
+              if (delta && "content" in delta && delta.content !== null) {
+                fullResponse += delta.content;
+              }
+            }
+          }
+        } catch (err) {}
       });
 
       response.data.on("end", async () => {
+        if (fullResponse.trim().length === 0) {
+          logger.log(
+            `{red-fg}Warning: No response received from agent ${agent_id}{/red-fg}`
+          );
+          fullResponse = "No response received";
+        }
+        const totalTime = Date.now() - startTime;
         logger.log(
           `{green-fg}Stream done ${agent_id}, received: ${fullResponse}{/green-fg}`
         );
-        await this.chatAgent(message, fullResponse, agent_id);
+        await this.chatAgent(message, fullResponse, agent_id, ttft, totalTime);
       });
     } catch (error) {
       logger.log(`{red-fg}Error when stream chat: ${error.message}{/red-fg}`);
     }
   }
 
-  async chatAgent(requestText, responseText, agent_id) {
+  async chatAgent(requestText, responseText, agent_id, ttft, total_time) {
     const url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage";
     const sendData = {
       wallet_address: this.account.address,
       agent_id: agent_id,
       request_text: requestText,
       response_text: responseText,
+      ttft: ttft,
+      total_time: total_time,
       request_metadata: {},
     };
 
     try {
       const response = await this.makeRequest("POST", url, { data: sendData });
-
       if (
         response &&
         response.data.message === "Usage report successfully recorded"
@@ -286,21 +306,19 @@ class gokiteAiAgent {
 
   async startAutoChatLoop() {
     const agents = [
-      "deployment_p5J9lz1Zxe7CYEoo0TZpRVay",
-      "deployment_XOeP0MdcDxeKIAhEd60auTrn",
-      "deployment_SoFftlsf9z4fyA3QCHYkaANq",
+      "deployment_R89FtdnXa7jWWHyr97WQ9LKG",
+      "deployment_fseGykIvCLs3m9Nrpe9Zguy9",
+      "deployment_xkerjnnbdtazr9e15x3y7fi8",
     ];
 
     while (true) {
-      const message = this.generateRandomMessage();
-
       for (const agent of agents) {
-        await this.chatStream(message, agent);
+        await this.chatStream(agent);
         await new Promise((resolve) => setTimeout(resolve, 10000));
       }
 
       logger.log(
-        `{yellow-fg}Waiting 10 minute before next chat...{/yellow-fg}`
+        `{yellow-fg}Waiting 10 minutes before next chat...{/yellow-fg}`
       );
       await new Promise((resolve) => setTimeout(resolve, 10 * 60 * 1000));
     }
