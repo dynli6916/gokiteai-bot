@@ -1,24 +1,21 @@
 {
-  "name": "gokiteai-bot",
+  "name": "gokiteaiv2-bot",
   "version": "1.0.0",
-  "description": "gokiteai-bot",
   "main": "src/index.js",
+  "type": "commonjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
   "author": "",
   "license": "ISC",
+  "description": "",
   "dependencies": {
     "axios": "^1.7.9",
-    "blessed": "^0.1.81",
-    "blessed-contrib": "^4.11.0",
     "chalk": "^4.1.2",
-    "fs": "^0.0.1-security",
+    "figlet": "^1.8.1",
     "https-proxy-agent": "^7.0.6",
-    "rand-user-agent": "^2.0.82",
-    "readline": "^1.3.0",
     "socks-proxy-agent": "^8.0.5",
-    "user-agents": "^1.1.440",
-    "web3": "^4.16.0"
+    "user-agents": "^1.1.435"
   }
 }

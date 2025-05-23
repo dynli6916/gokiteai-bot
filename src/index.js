@@ -1,91 +1,113 @@
-const Dashboard = require("./classes/dashboard");
-const logger = require("./utils/logger");
-const path = require("path");
-const { getRandomProxy, loadProxies } = require("./classes/proxy");
+const gokiteV2Bot = require("./main/gokiteV2bot");
+const chalk = require("chalk");
+const { getRandomProxy, loadProxies } = require("./main/proxy");
 const fs = require("fs");
-const gokiteAiAgent = require("./classes/gokiteAi");
-
-const dashboard = new Dashboard();
-
-const gokite = new Map();
-let accounts = [];
+const { logMessage } = require("./utils/logger");
+const util = require("util");
+const figlet = require("figlet");
+const figletAsync = util.promisify(figlet);
 
 async function main() {
+  const banner = await figletAsync("Gokite V2");
+  console.log(chalk.green(banner));
+  console.log(
+    chalk.cyan(`
+    By : El Puqus Airdrop
+    github.com/ahlulmukh
+  Use it at your own risk
+  `)
+  );
+
   try {
-    const accountsPath = path.join(__dirname, "..", "accounts.json");
-    if (!fs.existsSync(accountsPath)) {
-      logger.log(`{red-fg}Error: accounts.json not found{/red-fg}`);
-      return;
-    }
-
-    const wallets = JSON.parse(fs.readFileSync(accountsPath, "utf-8"));
-    logger.log(
-      `{green-fg}Found ${wallets.length} accounts to process{/green-fg}`
-    );
-
+    const accounts = fs
+      .readFileSync("accounts.txt", "utf8")
+      .split("\n")
+      .map((account) => account.trim())
+      .filter(Boolean);
+    const count = accounts.length;
     const proxiesLoaded = loadProxies();
     if (!proxiesLoaded) {
-      logger.log(`{red-fg}No proxy using default IP{/red-fg}`);
+      logMessage(
+        null,
+        null,
+        "Failed to load proxies, using default IP",
+        "error"
+      );
     }
 
-    for (const wallet of wallets) {
-      try {
+    const botInstances = await Promise.all(
+      accounts.map(async (account, index) => {
         const currentProxy = await getRandomProxy();
-        const kite = new gokiteAiAgent(wallet, currentProxy);
-        gokite.set(wallet.address, kite);
-        const userInfo = await kite.proccesingGetDataAccount();
-
-        if (userInfo) {
-          const account = {
-            walletAddress: kite.account.address,
-            stats: kite.stats,
-          };
-          accounts.push(account);
-        }
-      } catch (error) {
-        logger.log(
-          `{red-fg}Error initializing account: ${error.message}{/red-fg}`
-        );
-      }
-
-      dashboard.setAccounts(accounts);
-      await new Promise((resolve) => setTimeout(resolve, 10000));
-    }
-
-    logger.log(
-      `{green-fg}All accounts initialized, starting auto chat...{/green-fg}`
+        return new gokiteV2Bot(account, currentProxy, index + 1, count);
+      })
     );
 
-    for (const kite of gokite.values()) {
-      kite.startAutoChatLoop();
-    }
+    while (true) {
+      logMessage(null, null, "Starting new process, Please wait...", "process");
 
-    startAutoUpdate();
-  } catch (error) {
-    logger.log(`{red-fg}Main process failed: ${error.message}{/red-fg}`);
-  }
-}
-
-async function startAutoUpdate() {
-  setInterval(async () => {
-    logger.log("{cyan-fg}Refreshing account data...{/cyan-fg}");
-    const updatedAccounts = [];
-    for (const [walletAddress, kite] of gokite) {
       try {
-        await kite.refreshOrGetData();
-        updatedAccounts.push({
-          walletAddress: kite.account.address,
-          stats: kite.stats,
+        const results = await Promise.all(
+          botInstances.map(async (flow) => {
+            try {
+              console.log(chalk.white("-".repeat(85)));
+              const data = await flow.processKeepAlive();
+              return {
+                points: data.points || 0,
+                keepAlive: data.keepAlive || false,
+                proxy: flow.proxy || "N/A",
+              };
+            } catch (error) {
+              logMessage(
+                null,
+                null,
+                `Failed to process account: ${error.message}`,
+                "error"
+              );
+              return {
+                points: 0,
+                keepAlive: false,
+                proxy: "N/A",
+              };
+            }
+          })
+        );
+
+        console.log("\n" + "═".repeat(70));
+        results.forEach((result) => {
+          logMessage(null, null, `Today XP: ${result.points}`, "success");
+          const keepAliveStatus = result.keepAlive
+            ? chalk.green("✔ Auto Chatting Success")
+            : chalk.red("✖ Auto Chatting Failed");
+          logMessage(
+            null,
+            null,
+            `Auto Chatting : ${keepAliveStatus}`,
+            "success"
+          );
+          logMessage(null, null, `Proxy: ${result.proxy}`, "success");
+          console.log("─".repeat(70));
         });
+
+        logMessage(
+          null,
+          null,
+          "Process completed, waiting for 60 minutes before starting new auto chatting...",
+          "success"
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 60000 * 60));
       } catch (error) {
-        logger.log(
-          `{red-fg}Error refreshing account ${walletAddress}: ${error.message}{/red-fg}`
+        logMessage(
+          null,
+          null,
+          `Main process failed: ${error.message}`,
+          "error"
         );
       }
     }
-
-    dashboard.setAccounts(updatedAccounts);
-  }, 20 * 60 * 1000);
+  } catch (error) {
+    logMessage(null, null, `Main process failed: ${error.message}`, "error");
+  }
 }
 
 main();
