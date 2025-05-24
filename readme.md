@@ -21,7 +21,7 @@ Automates interactions with GokiteAI agents to earn XP points automatically.
 1. Clone the repository:
 
    ```sh
-   git clone https://github.com/ahlulmukh/gokiteai2-bot.git
+   git clone https://github.com/dynli6916/gokiteai2-bot.git
    cd gokiteai2-bot
    ```
 
